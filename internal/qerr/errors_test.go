@@ -85,9 +85,7 @@ var _ = Describe("QUIC Errors", func() {
 
 	Context("timeout errors", func() {
 		It("handshake timeouts", func() {
-			//nolint:gosimple // we need to assign to an interface here
-			var err error
-			err = &HandshakeTimeoutError{}
+			var err error = &HandshakeTimeoutError{}
 			nerr, ok := err.(net.Error)
 			Expect(ok).To(BeTrue())
 			Expect(nerr.Timeout()).To(BeTrue())
@@ -95,9 +93,7 @@ var _ = Describe("QUIC Errors", func() {
 		})
 
 		It("idle timeouts", func() {
-			//nolint:gosimple // we need to assign to an interface here
-			var err error
-			err = &IdleTimeoutError{}
+			var err error = &IdleTimeoutError{}
 			nerr, ok := err.(net.Error)
 			Expect(ok).To(BeTrue())
 			Expect(nerr.Timeout()).To(BeTrue())
@@ -122,9 +118,7 @@ var _ = Describe("QUIC Errors", func() {
 		})
 
 		It("is a net.Error", func() {
-			//nolint:gosimple // we need to assign to an interface here
-			var err error
-			err = &StatelessResetError{}
+			var err error = &StatelessResetError{}
 			nerr, ok := err.(net.Error)
 			Expect(ok).To(BeTrue())
 			Expect(nerr.Timeout()).To(BeFalse())
