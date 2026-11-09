@@ -532,6 +532,7 @@ func TestTransportCloseIdleConnections(t *testing.T) {
 		},
 		newClientConn: func(*quic.Conn) clientConn {
 			cl := NewMockClientConn(mockCtrl)
+			cl.EXPECT().hasActiveStreams().Return(false).AnyTimes()
 			cl.EXPECT().RoundTrip(gomock.Any()).DoAndReturn(func(r *http.Request) (*http.Response, error) {
 				roundTripCalled <- struct{}{}
 				<-r.Context().Done()
@@ -577,6 +578,63 @@ func TestTransportCloseIdleConnections(t *testing.T) {
 	case <-conn2.Context().Done():
 	case <-time.After(time.Second):
 		t.Fatal("timeout")
+	}
+}
+
+func TestTransportCloseIdleConnectionsWithUnreadResponseBody(t *testing.T) {
+	clientConn, serverConn := newConnPair(t)
+	releaseBody := make(chan struct{})
+	s := &Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "11")
+			if _, err := io.WriteString(w, "first"); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			select {
+			case <-releaseBody:
+				_, _ = io.WriteString(w, "second")
+			case <-r.Context().Done():
+			}
+		}),
+	}
+	go s.ServeQUICConn(serverConn)
+
+	tr := &Transport{
+		Dial: func(_ context.Context, _ string, _ *tls.Config, _ *quic.Config) (*quic.Conn, error) {
+			return clientConn, nil
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "https://quic-go.net/", nil).WithContext(ctx)
+	rsp, err := tr.RoundTrip(req)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+
+	prefix := make([]byte, len("first"))
+	_, err = io.ReadFull(rsp.Body, prefix)
+	require.NoError(t, err)
+
+	// The response body is still being read, so the connection is not idle.
+	tr.CloseIdleConnections()
+	select {
+	case <-clientConn.Context().Done():
+		t.Fatal("connection was closed while the response body was still being read")
+	default:
+	}
+
+	close(releaseBody)
+	rest, err := io.ReadAll(rsp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "firstsecond", string(prefix)+string(rest))
+
+	// Once the body has been read to EOF, the connection is idle again.
+	tr.CloseIdleConnections()
+	select {
+	case <-clientConn.Context().Done():
+	case <-time.After(time.Second):
+		t.Fatal("timeout: connection was not closed")
 	}
 }
 

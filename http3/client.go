@@ -256,6 +256,11 @@ func (c *ClientConn) onStreamsEmpty() {
 	}
 }
 
+// hasActiveStreams reports whether there are request streams that are not
+// fully closed yet, i.e. requests whose response body hasn't been read (or
+// closed) completely.
+func (c *ClientConn) hasActiveStreams() bool { return c.rawConn.hasActiveStreams() }
+
 // RoundTrip executes a request and returns a response
 func (c *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	rsp, err := c.roundTrip(req)

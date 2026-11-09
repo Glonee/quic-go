@@ -41,6 +41,7 @@ type clientConn interface {
 	OpenRequestStream(context.Context) (*RequestStream, error)
 	RoundTrip(*http.Request) (*http.Response, error)
 	handleUnidirectionalStream(*quic.ReceiveStream)
+	hasActiveStreams() bool
 }
 
 type roundTripperWithCount struct {
@@ -527,13 +528,14 @@ func isNotToken(r rune) bool {
 
 // CloseIdleConnections closes any QUIC connections in the transport's pool that are currently idle.
 // An idle connection is one that was previously used for requests but is now sitting unused.
-// This method does not interrupt any connections currently in use.
+// A connection is only considered idle once all response bodies received on it have been
+// read to completion or closed, so this method does not interrupt responses in flight.
 // It also does not affect connections obtained via [Transport.NewClientConn].
 func (t *Transport) CloseIdleConnections() {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	for hostname, cl := range t.clients {
-		if cl.useCount.Load() == 0 {
+		if cl.useCount.Load() == 0 && !cl.clientConn.hasActiveStreams() {
 			cl.Close()
 			delete(t.clients, hostname)
 		}
